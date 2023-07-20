@@ -1,0 +1,33 @@
+#  Template python-build
+
+#  This template allows you to validate your python code.
+#  The workflow allows running tests and code linting on the default branch.
+
+image: python:3.10
+
+pipelines:
+  default:
+    - parallel:
+      - step:
+          name: Build
+          caches:
+            - pip
+          script:
+            - pip install poetry
+            - poetry build
+      - step:
+          name: Test
+          caches:
+            - pip
+          script:
+            - curl -L http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -o - | tar -xzf -
+            - cd ta-lib && ./configure --prefix=$PWD/build && make install && cd -
+            - pip install pytest poetry
+            - TA_LIBRARY_PATH=$PWD/ta-lib/build/lib TA_INCLUDE_PATH=$PWD/ta-lib/build/include poetry install
+            - poetry run pytest
+      # - step:
+      #     name: Lint code
+      #     script:
+      #       # Enforce style consistency across Python projects https://flake8.pycqa.org
+      #       - pip install flake8
+      #       - flake8 . --extend-exclude=dist,build --show-source --statistics

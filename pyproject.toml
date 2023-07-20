@@ -1,9 +1,10 @@
 [tool.poetry]
 name = "advanced-ta"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python implementation of Lorentzian Classification algorithm."
 authors = ["Loki Arya <loki.arya+osdev@gmail.com>"]
 readme = "README.md"
+repository = "https://bitbucket.org/lokiarya/advanced-ta"
 
 [tool.poetry.dependencies]
 python = "^3.10"
