@@ -49,10 +49,9 @@ def test_case2(setup):
             LorentzianClassification.Feature("RSI", 9, 2),   # f5
         ],
         settings=LorentzianClassification.Settings(
-            source='close',
+            source=df['close'],
             neighborsCount=8,
             maxBarsBack=2000,
-            showDefaultExits=False,
             useDynamicExits=False
         ),
         filterSettings=LorentzianClassification.FilterSettings(
@@ -60,7 +59,8 @@ def test_case2(setup):
             useRegimeFilter=True,
             useAdxFilter=False,
             regimeThreshold=-0.1,
-            adxThreshold=20
+            adxThreshold=20,
+            kernelFilter=LorentzianClassification.KernelFilter()
         ))
     lc.dump('output/result2.csv')
 

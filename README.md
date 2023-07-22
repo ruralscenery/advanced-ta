@@ -39,7 +39,6 @@ import TA-Lib as ta
             source='close',
             neighborsCount=8,
             maxBarsBack=2000,
-            showDefaultExits=False,
             useDynamicExits=False
         ),
         filterSettings=LorentzianClassification.FilterSettings(
@@ -47,7 +46,14 @@ import TA-Lib as ta
             useRegimeFilter=True,
             useAdxFilter=False,
             regimeThreshold=-0.1,
-            adxThreshold=20
+            adxThreshold=20,
+            kernelFilter = LorentzianClassification.KernelFilter(
+                useKernelSmoothing = False
+                lookbackWindow = 8
+                relativeWeight = 8.0
+                regressionLevel = 25
+                crossoverLag = 2
+            )
         ))
     lc.dump('output/result.csv')
     lc.plot('output/result.jpg')

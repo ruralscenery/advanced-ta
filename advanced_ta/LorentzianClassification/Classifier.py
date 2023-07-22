@@ -106,7 +106,7 @@ import talib as ta
 
 class LorentzianClassification:
     
-    from .Types import Feature, Settings, FilterSettings
+    from .Types import Feature, Settings, KernelFilter, FilterSettings
 
     df: pd.DataFrame = None
     features = list[pd.Series]()
@@ -137,6 +137,7 @@ class LorentzianClassification:
 
     def __init__(self, data: pd.DataFrame, features: list = [], settings: Settings = None, filterSettings: FilterSettings = None):
         self.df = data.copy()
+
         if len(features) == 0:
             features = [
                 Feature("RSI", 14, 2),  # f1
@@ -146,23 +147,23 @@ class LorentzianClassification:
                 Feature("RSI", 9, 2),   # f5
             ]
         if settings == None:
-            settings = Settings(
-                source='close',
-                neighborsCount = 8,
-                maxBarsBack = 2000,
-                featureCount = 5,
-                colorCompression = 1,
-                showDefaultExits = False,
-                useDynamicExits = False
-            )
+            settings = Settings(source=data['close'])
+
         if filterSettings == None:
             filterSettings = FilterSettings(
                 useVolatilityFilter = True,
                 useRegimeFilter = True,
                 useAdxFilter = False,
                 regimeThreshold=-0.1,
-                adxThreshold = 20
+                adxThreshold = 20,
+                kernelFilter = KernelFilter()
             )
+        if hasattr(filterSettings, 'kernelFilter'):
+            self.useKernelFilter = True
+        else:
+            self.useKernelFilter = False
+            filterSettings.kernelFilter = KernelFilter()
+
         for f in features:
             if type(f) == Feature:
                 self.features.append(LorentzianClassification.series_from(data, f.type, f.param1, f.param2))
@@ -173,7 +174,7 @@ class LorentzianClassification:
         self.filter = Filter(
             volatility = ml.filter_volatility(data['high'], data['low'], data['close'], filterSettings.useVolatilityFilter, 1, 10),
             regime = ml.regime_filter((data['open'] + data['high'] + data['low'] + data['close']) / 4, data['high'], data['low'], filterSettings.useRegimeFilter, filterSettings.regimeThreshold),
-            adx = ml.filter_adx(data[settings.source], data['high'], data['low'], filterSettings.adxThreshold, filterSettings.useAdxFilter, 14)
+            adx = ml.filter_adx(settings.source, data['high'], data['low'], filterSettings.adxThreshold, filterSettings.useAdxFilter, 14)
         )
         self.__classify()
 
@@ -188,35 +189,11 @@ class LorentzianClassification:
     def __classify(self):
         # Derived from General Settings
         maxBarsBackIndex = (len(self.df.index) - self.settings.maxBarsBack) if (len(self.df.index) >= self.settings.maxBarsBack) else 0
-        # EMA Settings
-        useEmaFilter = False
-        emaPeriod = 200
-        self.df["isEmaUptrend"] = (self.df["close"] > ta.EMA(self.df["close"], emaPeriod)) if useEmaFilter else True
-        self.df["isEmaDowntrend"] = (self.df["close"] < ta.EMA(self.df["close"], emaPeriod)) if useEmaFilter else True
 
-        # SMA Settings
-        useSmaFilter = False
-        smaPeriod = 200
-        self.df["isSmaUptrend"] = (self.df["close"] > ta.SMA(self.df["close"], smaPeriod)) if useSmaFilter else True
-        self.df["isSmaDowntrend"] = (self.df["close"] < ta.SMA(self.df["close"], smaPeriod)) if useSmaFilter else True
-
-
-        # Nadaraya-Watson Kernel Regression Settings
-        useKernelFilter = True  # Trade with Kernel
-        showKernelEstimate = True  # Show Kernel Estimate
-        useKernelSmoothing = False  # Enhance Kernel Smoothing: Uses a crossover based mechanism to smoothen kernel color changes. This often results in less color transitions overall and may result in more ML entry signals being generated.
-        h = 8  # Lookback Window: The number of bars used for the estimation. This is a sliding value that represents the most recent historical bars. Recommended range: 3-50
-        r = 8.0  # Relative Weighting: Relative weighting of time frames. As this value approaches zero, the longer time frames will exert more influence on the estimation. As this value approaches infinity, the behavior of the Rational Quadratic Kernel will become identical to the Gaussian kernel. Recommended range: 0.25-25
-        x = 25  # Regression Level: Bar index on which to start regression. Controls how tightly fit the kernel estimate is to the data. Smaller values are a tighter fit. Larger values are a looser fit. Recommended range: 2-25
-        lag = 2  # Lag: Lag for crossover detection. Lower values result in earlier crossovers. Recommended range: 1-2
-
-
-        # Display Settings
-        showBarColors = True  # Whether to show the bar colors.
-        showBarPredictions = True  # Will show the ML model's evaluation of each bar as an integer.
-        useAtrOffset = False  # Will use the ATR offset instead of the bar prediction offset.
-        barPredictionsOffset = 0.0  # The offset of the bar predictions as a percentage from the bar high or close.
-
+        self.df["isEmaUptrend"] = (self.df["close"] > ta.EMA(self.df["close"], self.settings.emaPeriod)) if self.settings.useEmaFilter else True
+        self.df["isEmaDowntrend"] = (self.df["close"] < ta.EMA(self.df["close"], self.settings.emaPeriod)) if self.settings.useEmaFilter else True
+        self.df["isSmaUptrend"] = (self.df["close"] > ta.SMA(self.df["close"], self.settings.smaPeriod)) if self.settings.useSmaFilter else True
+        self.df["isSmaDowntrend"] = (self.df["close"] < ta.SMA(self.df["close"], self.settings.smaPeriod)) if self.settings.useSmaFilter else True
 
         # =================================
         # ==== Next Bar Classification ====
@@ -224,7 +201,7 @@ class LorentzianClassification:
 
         # This model specializes specifically in predicting the direction of price action over the course of the next 4 bars. 
         # To avoid complications with the ML model, this value is hardcoded to 4 bars but support for other training lengths may be added in the future.
-        src = self.df[self.settings.source]
+        src = self.settings.source
         y_train_array = np.where(src.shift(4) < src.shift(0), Direction.SHORT, np.where(src.shift(4) > src.shift(0), Direction.LONG, Direction.NEUTRAL))
 
         # Variables used for ML Logic
@@ -334,8 +311,9 @@ class LorentzianClassification:
         # Kernel Regression Filters: Filters based on Nadaraya-Watson Kernel Regression using the Rational Quadratic Kernel
         # For more information on this technique refer to my other open source indicator located here:
         # https://www.tradingview.com/script/AWNvbPRM-Nadaraya-Watson-Rational-Quadratic-Kernel-Non-Repainting/
-        self.yhat1 = kernels.rationalQuadratic(src, h, r, x)
-        self.yhat2 = kernels.gaussian(src, h-lag, x)
+        kFilter = self.filterSettings.kernelFilter
+        self.yhat1 = kernels.rationalQuadratic(src, kFilter.lookbackWindow, kFilter.relativeWeight, kFilter.regressionLevel)
+        self.yhat2 = kernels.gaussian(src, kFilter.lookbackWindow-kFilter.crossoverLag, kFilter.regressionLevel)
         # Kernel Rates of Change
         wasBearishRate = np.where(self.yhat1.shift(2) > self.yhat1.shift(1), True, False)
         wasBullishRate = np.where(self.yhat1.shift(2) < self.yhat1.shift(1), True, False)
@@ -351,11 +329,11 @@ class LorentzianClassification:
         # Kernel Colors
         # plot(kernelEstimate, color=plotColor, linewidth=2, title="Kernel Regression Estimate")
         # Alert Variables
-        alertBullish = np.where(useKernelSmoothing, isBullishCrossAlert, isBullishChange)
-        alertBearish = np.where(useKernelSmoothing, isBearishCrossAlert, isBearishChange)
+        alertBullish = np.where(kFilter.useKernelSmoothing, isBullishCrossAlert, isBullishChange)
+        alertBearish = np.where(kFilter.useKernelSmoothing, isBearishCrossAlert, isBearishChange)
         # Bullish and Bearish Filters based on Kernel
-        isBullish = np.where(useKernelFilter, np.where(useKernelSmoothing, isBullishSmooth, isBullishRate), True)
-        isBearish = np.where(useKernelFilter, np.where(useKernelSmoothing, isBearishSmooth, isBearishRate) , True)
+        isBullish = np.where(self.useKernelFilter, np.where(kFilter.useKernelSmoothing, isBullishSmooth, isBullishRate), True)
+        isBearish = np.where(self.useKernelFilter, np.where(kFilter.useKernelSmoothing, isBearishSmooth, isBearishRate) , True)
 
         # ===========================
         # ==== Entries and Exits ====
@@ -379,8 +357,8 @@ class LorentzianClassification:
         self.df["startShortTrade"] = np.where(startShortTrade, self.df['high'], np.NaN)
 
         # Dynamic Exit Conditions: Booleans for ML Model Position Exits based on Fractal Filters and Kernel Regression Filters
-        lastSignalWasBullish = barssince(startLongTrade) < barssince(startShortTrade)
-        lastSignalWasBearish = barssince(startShortTrade) < barssince(startLongTrade)
+        # lastSignalWasBullish = barssince(startLongTrade) < barssince(startShortTrade)
+        # lastSignalWasBearish = barssince(startShortTrade) < barssince(startLongTrade)
         barsSinceRedEntry = barssince(startShortTrade)
         barsSinceRedExit = barssince(alertBullish)
         barsSinceGreenEntry = barssince(startLongTrade)
@@ -393,7 +371,7 @@ class LorentzianClassification:
         # Fixed Exit Conditions: Booleans for ML Model Position Exits based on Bar-Count Filters
         endLongTradeStrict = ((isHeldFourBars & self.df["isLastSignalBuy"]) | (isHeldLessThanFourBars & self.df["isNewSellSignal"] & self.df["isLastSignalBuy"])) & startLongTrade.shift(4)
         endShortTradeStrict = ((isHeldFourBars & self.df["isLastSignalSell"]) | (isHeldLessThanFourBars & self.df["isNewBuySignal"] & self.df["isLastSignalSell"])) & startShortTrade.shift(4)
-        isDynamicExitValid = ~useEmaFilter & ~useSmaFilter & ~useKernelSmoothing
+        isDynamicExitValid = ~self.settings.useEmaFilter & ~self.settings.useSmaFilter & ~kFilter.useKernelSmoothing
         self.df["endLongTrade"] = self.settings.useDynamicExits & isDynamicExitValid & endLongTradeDynamic | endLongTradeStrict
         self.df["endShortTrade"] = self.settings.useDynamicExits & isDynamicExitValid & endShortTradeDynamic | endShortTradeStrict
 

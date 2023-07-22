@@ -22,9 +22,9 @@ pipelines:
           script:
             - curl -L http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -o - | tar -xzf -
             - cd ta-lib && ./configure --prefix=$PWD/build && make install && cd -
-            - pip install pytest poetry
+            - pip install pytest pytest-profiling poetry
             - TA_LIBRARY_PATH=$PWD/ta-lib/build/lib TA_INCLUDE_PATH=$PWD/ta-lib/build/include poetry install
-            - poetry run pytest
+            - poetry run pytest --profile
       # - step:
       #     name: Lint code
       #     script:
