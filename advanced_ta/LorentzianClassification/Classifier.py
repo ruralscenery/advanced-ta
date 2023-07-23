@@ -401,12 +401,12 @@ class LorentzianClassification:
         sub_plots = [
             mpf.make_addplot(self.yhat1.head(len), ylabel="Kernel Regression Estimate", color='blue'),
             mpf.make_addplot(self.yhat2.head(len), ylabel="yhat2", color='gray'),
-            mpf.make_addplot(self.df["startLongTrade"], ylabel="startLongTrade", color='green', type='scatter', markersize=50, marker='^'),
-            mpf.make_addplot(self.df["startShortTrade"], ylabel="startShortTrade", color='red', type='scatter', markersize=50, marker='v'),
+            mpf.make_addplot(self.df["startLongTrade"], ylabel="startLongTrade", color='green', type='scatter', markersize=120, marker='^'),
+            mpf.make_addplot(self.df["startShortTrade"], ylabel="startShortTrade", color='red', type='scatter', markersize=120, marker='v'),
         ]
         s = mpf.make_mpf_style(base_mpf_style='yahoo', rc={'figure.facecolor': 'lightgray'}, edgecolor='black',
                             marketcolors=mpf.make_marketcolors(base_mpf_style='yahoo', inherit=True, alpha=0.2))
-        fig, axlist = mpf.plot(self.df[['open', 'high', 'low', 'close']].head(len), type='candle', style=s, addplot=sub_plots, figsize=(20,20) ,returnfig=True)
+        fig, axlist = mpf.plot(self.df[['open', 'high', 'low', 'close']].head(len), type='candle', style=s, addplot=sub_plots, figsize=(30,40) ,returnfig=True)
 
         for x in range(len):
             y = self.df.loc[self.df.index[x], 'low']
