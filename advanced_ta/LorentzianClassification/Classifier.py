@@ -5,6 +5,7 @@ from .Types import *
 from . import MLExtensions as ml
 from . import KernelFunctions as kernels
 import talib as ta
+from scipy.spatial.distance import cdist
 
 # ====================
 # ==== Background ====
@@ -179,13 +180,6 @@ class LorentzianClassification:
         self.__classify()
 
 
-    def __get_lorentzian_distance(self, i, bar_index, features: list[pd.Series]):
-        retVal = 0
-        for feature in features:
-            retVal += math.log(1 + abs(feature[bar_index] - feature[i]))
-        return retVal
-
-
     def __classify(self):
         # Derived from General Settings
         maxBarsBackIndex = (len(self.df.index) - self.settings.maxBarsBack) if (len(self.df.index) >= self.settings.maxBarsBack) else 0
@@ -207,7 +201,6 @@ class LorentzianClassification:
         # Variables used for ML Logic
         predictions = []
         self.df["prediction"] = 0
-        self.df["signal"] = Direction.NEUTRAL
         distances = []
 
 
@@ -255,22 +248,27 @@ class LorentzianClassification:
         # 5. Lorentzian distance is used as a distance metric in order to minimize the effect of outliers and take into account the warping of 
         #    "price-time" due to proximity to significant economic events.
 
+        sizeLoop = np.arange(1, len(self.df[maxBarsBackIndex:]) + 1)
+        sizeLoop = np.where(sizeLoop < self.settings.maxBarsBack, sizeLoop, self.settings.maxBarsBack)
+
+        dists = [[0] * len(src)] * len(src)
+        for feature in self.features:
+            dists += np.log(1 + cdist(pd.DataFrame(feature), pd.DataFrame(feature)))
+
         for bar_index in range(maxBarsBackIndex, len(src)):
             lastDistance = -1.0
-            sizeLoop = min(self.settings.maxBarsBack - 1, bar_index)
-
-            if bar_index >= maxBarsBackIndex:
-                for i in range(sizeLoop + 1):
-                    d = self.__get_lorentzian_distance(i, bar_index, self.features)
-                    if d >= lastDistance and i % 4:
-                        lastDistance = d
-                        distances.append(d)
-                        predictions.append(round(y_train_array[i]))
-                        if len(predictions) > self.settings.neighborsCount:
-                            lastDistance = distances[round(self.settings.neighborsCount*3/4)]
-                            distances.pop(0)
-                            predictions.pop(0)
-                self.df.loc[self.df.index[bar_index], 'prediction'] = sum(predictions)
+            dist = dists[bar_index][:sizeLoop[bar_index]]
+            for i in range(len(dist)):
+                d = dist[i]
+                if d >= lastDistance and i % 4:
+                    lastDistance = d
+                    distances.append(d)
+                    predictions.append(round(y_train_array[i]))
+                    if len(predictions) > self.settings.neighborsCount:
+                        lastDistance = distances[round(self.settings.neighborsCount*3/4)]
+                        distances.pop(0)
+                        predictions.pop(0)
+            self.df.loc[self.df.index[bar_index], 'prediction'] = sum(predictions)
 
 
         # ============================
@@ -281,29 +279,44 @@ class LorentzianClassification:
         filter_all = pd.Series(self.filter.volatility & self.filter.regime & self.filter.adx)
 
         # Filtered Signal: The model's prediction of future price movement direction with user-defined filters applied
-        for i in range(len(self.df.index)):
-            prediction = self.df["prediction"].iloc[i]
-            self.df.loc[self.df.index[i], "signal"] = Direction.LONG if (prediction > 0 and filter_all[i]) else Direction.SHORT if prediction < 0 and filter_all[i] else self.df["signal"].iloc[i - 1 if i >= 1 else 0]
-
-        change = lambda col, i: self.df[col].iloc[i] != self.df[col].shift(1, fill_value=self.df[col].iloc[0]).iloc[i]
+        signal = np.where(((self.df["prediction"] > 0) & filter_all), Direction.LONG, np.where(((self.df["prediction"] < 0) & filter_all), Direction.SHORT, None))
+        signal[0] = (0 if signal[0] == None else signal[0])
+        for i in np.where(signal == None)[0]: signal[i] = signal[i - 1 if i >= 1 else 0]
+        signal = pd.Series(signal, index=self.df.index)
+        
+        change = lambda ser, i: (ser.shift(i, fill_value=ser[0]) != ser.shift(i+1, fill_value=ser[0]))
 
         # Bar-Count Filters: Represents strict filters based on a pre-defined holding period of 4 bars
-        self.df["barsHeld"] = 0
-        for i in range(len(self.df.index)):
-            isDifferentSignalType = change("signal", i)
-            self.df.loc[self.df.index[i], "barsHeld"] = 0 if isDifferentSignalType else self.df["barsHeld"].shift(1, fill_value=self.df["barsHeld"].iloc[0]).iloc[i] + 1
-            isHeldFourBars = self.df["barsHeld"].iloc[i] == 4
-            isHeldLessThanFourBars = 0 <= self.df["barsHeld"].iloc[i] < 4
+        barsHeld = []
+        isDifferentSignalType = (signal != signal.shift(1, fill_value=signal[0]))
+        _sigFlip = np.where(isDifferentSignalType)[0].tolist()
+        if not (len(isDifferentSignalType) in _sigFlip): _sigFlip.append(len(isDifferentSignalType))
+        for i, x in enumerate(_sigFlip):
+            if i > 0: barsHeld.append(0)
+            barsHeld += range(1, x-(-1 if i == 0 else _sigFlip[i-1]))
+        isHeldFourBars = (pd.Series(barsHeld) == 4).tolist()
+        isHeldLessThanFourBars = (pd.Series(barsHeld) < 4).tolist()
 
         # Fractal Filters: Derived from relative appearances of signals in a given time series fractal/segment with a default length of 4 bars
-            self.df.loc[self.df.index[i], "isEarlySignalFlip"] = change("signal", i) and (change("signal", i-1) or change("signal", i-2) or change("signal", i-3))
-            isBuySignal = self.df["signal"].iloc[i] == Direction.LONG and self.df["isEmaUptrend"].iloc[i] and self.df["isSmaUptrend"].iloc[i]
-            isSellSignal = self.df["signal"].iloc[i] == Direction.SHORT and self.df["isEmaDowntrend"].iloc[i] and self.df["isSmaDowntrend"].iloc[i]
-            self.df.loc[self.df.index[i], "isLastSignalBuy"] = self.df["signal"].shift(4).iloc[i] == Direction.LONG and self.df["isEmaUptrend"].shift(4).iloc[i] and self.df["isSmaUptrend"].shift(4).iloc[i]
-            self.df.loc[self.df.index[i], "isLastSignalSell"] = self.df["signal"].shift(4).iloc[i] == Direction.SHORT and self.df["isEmaDowntrend"].shift(4).iloc[i] and self.df["isSmaDowntrend"].shift(4).iloc[i]
-            self.df.loc[self.df.index[i], "isNewBuySignal"] = isBuySignal and isDifferentSignalType
-            self.df.loc[self.df.index[i], "isNewSellSignal"] = isSellSignal and isDifferentSignalType
+        isEarlySignalFlip = (change(signal, 0) & change(signal, 1) & change(signal, 2) & change(signal, 3))
+        isBuySignal = ((signal == Direction.LONG) & self.df["isEmaUptrend"] & self.df["isSmaUptrend"])
+        isSellSignal = ((signal == Direction.SHORT) & self.df["isEmaDowntrend"] & self.df["isSmaDowntrend"])
+        isLastSignalBuy = (signal.shift(4) == Direction.LONG) & self.df["isEmaUptrend"].shift(4) & self.df["isSmaUptrend"].shift(4)
+        isLastSignalSell = (signal.shift(4) == Direction.SHORT) & self.df["isEmaDowntrend"].shift(4) & self.df["isSmaDowntrend"].shift(4)
+        isNewBuySignal = (isBuySignal & isDifferentSignalType)
+        isNewSellSignal = (isSellSignal & isDifferentSignalType)
 
+        self.df["signal"] = signal
+        self.df["barsHeld"] = barsHeld
+        # self.df["isHeldFourBars"] = isHeldFourBars
+        # self.df["isHeldLessThanFourBars"] = isHeldLessThanFourBars
+        self.df["isEarlySignalFlip"] = isEarlySignalFlip
+        # self.df["isBuySignal"] = isBuySignal
+        # self.df["isSellSignal"] = isSellSignal
+        self.df["isLastSignalBuy"] = isLastSignalBuy
+        self.df["isLastSignalSell"] = isLastSignalSell
+        self.df["isNewBuySignal"] = isNewBuySignal
+        self.df["isNewSellSignal"] = isNewSellSignal
 
         crossover   = lambda s1, s2: (s1 > s2) & (s1.shift(1) < s2.shift(1))
         crossunder  = lambda s1, s2: (s1 < s2) & (s1.shift(1) > s2.shift(1))
