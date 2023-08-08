@@ -93,12 +93,15 @@ def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> pd.
 # @returns <bool> Boolean indicating whether or not to let the signal pass through the filter.
 def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilter, threshold):
     if not useRegimeFilter: return pd.Series(True, index=src.index)
-    value1 = pd.Series([0.0])
-    value2 = pd.Series([0.0])
-    klmf = pd.Series([0.0])
+    value1 = [0.0] * src.index.size
+    value2 = [0.0] * src.index.size
+    klmf = [0.0] * src.index.size
     absCurveSlope = pd.Series([0.0])
     filter = pd.Series(False, index=src.index)
     for i in range(src.size):
+        if (high[i] - low[i]) == 0:
+            filter[i] = False
+            continue
         value1[i] = 0.2 * (src[i] - src[i - 1 if i >= 1 else 0]) + 0.8 * value1[i - 1 if i >= 1 else 0]
         value2[i] = 0.1 * (high[i] - low[i]) + 0.8 * value2[i - 1 if i >= 1 else 0]
         omega = abs(value1[i] / value2[i])

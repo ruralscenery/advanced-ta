@@ -136,10 +136,16 @@ class LorentzianClassification:
                 return ml.n_adx(data['high'], data['low'], data['close'], f_paramA)
 
 
-    def __init__(self, data: pd.DataFrame, features: list = [], settings: Settings = None, filterSettings: FilterSettings = None):
+    def __init__(self, data: pd.DataFrame, features: list = None, settings: Settings = None, filterSettings: FilterSettings = None):
         self.df = data.copy()
+        self.features = []
+        self.filterSettings = None
+        self.settings = None
+        self.filter = None
+        self.yhat1 = None
+        self.yhat2 = None
 
-        if len(features) == 0:
+        if features == None:
             features = [
                 Feature("RSI", 14, 2),  # f1
                 Feature("WT", 10, 11),  # f2
@@ -248,17 +254,21 @@ class LorentzianClassification:
         # 5. Lorentzian distance is used as a distance metric in order to minimize the effect of outliers and take into account the warping of 
         #    "price-time" due to proximity to significant economic events.
 
-        sizeLoop = np.arange(1, len(self.df[maxBarsBackIndex:]) + 1)
-        sizeLoop = np.where(sizeLoop < self.settings.maxBarsBack, sizeLoop, self.settings.maxBarsBack)
+        def get_lorentzian_distance(size, bar_index, features: list[pd.Series]):
+            retVal = [0] * size
+            for feature in features:
+                retVal += np.log(1 + abs(feature[bar_index] - feature[:size]))
+            return retVal
 
-        dists = [[0] * len(src)] * len(src)
-        for feature in self.features:
-            dists += np.log(1 + cdist(pd.DataFrame(feature), pd.DataFrame(feature)))
+        # dists = [[0] * len(src)] * len(src)
+        # for feature in self.features:
+        #     dists += np.log(1 + cdist(pd.DataFrame(feature), pd.DataFrame(feature)))
 
         for bar_index in range(maxBarsBackIndex, len(src)):
             lastDistance = -1.0
-            dist = dists[bar_index][:sizeLoop[bar_index]]
-            for i in range(len(dist)):
+            sizeLoop = min(self.settings.maxBarsBack - 1, bar_index)
+            dist = get_lorentzian_distance(sizeLoop + 1, bar_index, self.features)
+            for i in range(sizeLoop + 1):
                 d = dist[i]
                 if d >= lastDistance and i % 4:
                     lastDistance = d
@@ -397,6 +407,7 @@ class LorentzianClassification:
         self.df.to_csv(name)
 
 
+    @property
     def data(self) -> pd.DataFrame:
         return self.df
 

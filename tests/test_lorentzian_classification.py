@@ -25,19 +25,19 @@ def load_data(file: str):
 
 
 def test_case1(setup):
-    df = load_data("data/NSE_Instruments_256265.csv")
+    df = load_data("data/NSE_NIFTY_MONTHLY.csv")
 
     lc = LorentzianClassification(df)
     lc.dump('output/result1.csv')
 
-    df1 = pd.read_csv('output/result1.csv')
-    df2 = pd.read_csv('expected/lc_case1.csv')
+    df1 = load_data('output/result1.csv')
+    df2 = load_data('expected/lc_case1.csv')
 
     assert df1.equals(df2)
 
 
 def test_case2(setup):
-    df = load_data("data/NSE_Instruments_256265.csv")
+    df = load_data("data/NSE_NIFTY_MONTHLY.csv")
 
     lc = LorentzianClassification(
         df,
@@ -64,7 +64,28 @@ def test_case2(setup):
         ))
     lc.dump('output/result2.csv')
 
-    df1 = pd.read_csv('output/result2.csv')
-    df2 = pd.read_csv('expected/lc_case1.csv')
+    df1 = load_data('output/result2.csv')
+    df2 = load_data('expected/lc_case1.csv')
+
+    assert df1.equals(df2)
+
+
+def test_case3(setup):
+    from advanced_ta import LorentzianClassification
+    df = load_data("data/NSE_NIFTY_DAILY.csv")
+
+    lc = LorentzianClassification(
+        df,
+        features=[
+            df['f1'],  # f1
+            df['f2'],  # f2
+            df['f3'],  # f3
+            df['f4'],  # f4
+            df['f5'],  # f5
+        ])
+    lc.dump('output/result3.csv')
+
+    df1 = load_data('output/result3.csv')
+    df2 = load_data('expected/lc_case3.csv')
 
     assert df1.equals(df2)
