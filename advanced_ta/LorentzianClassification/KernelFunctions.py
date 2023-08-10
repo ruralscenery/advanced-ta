@@ -1,43 +1,45 @@
 import math
 import pandas as pd
+import numpy as np
 
 
-# @function Rational Quadratic Kernel - An infinite sum of Gaussian Kernels of different length scales.
-# @param _src <float series> The source series.
-# @param _lookback <simple int> The number of bars used for the estimation. This is a sliding value that represents the most recent historical bars.
-# @param _relativeWeight <simple float> Relative weighting of time frames. Smaller values resut in a more stretched out curve and larger values will result in a more wiggly curve. As this value approaches zero, the longer time frames will exert more influence on the estimation. As this value approaches infinity, the behavior of the Rational Quadratic Kernel will become identical to the Gaussian kernel.
-# @param _startAtBar <simple int> Bar index on which to start regression. The first bars of a chart are often highly volatile, and omission of these initial bars often leads to a better overall fit.
-# @returns yhat <float series> The estimated values according to the Rational Quadratic Kernel.
-def rationalQuadratic(src: pd.Series, lookback: int, relativeWeight: int, startAtBar: int) -> pd.Series:
-    val = pd.Series(0.0, index=src.index)
-    for bar_index in range(startAtBar + 1, len(src)):
-        currentWeight = 0.0
-        cumulativeWeight = 0.0
-        for i in range(startAtBar + 2):
-            y = src[bar_index-i]
-            w = (1 + (i ** 2 / (lookback ** 2 * 2 * relativeWeight))) ** -relativeWeight
-            currentWeight += y * w
-            cumulativeWeight += w
+def rationalQuadratic(src: pd.Series, lookback: int, relativeWeight: float, startAtBar: int):
+    """
+    vectorized calculate for rational quadratic curve
+    :param src:
+    :param lookback:
+    :param relativeWeight:
+    :param startAtBar:
+    :return:
+    """
 
-        val[bar_index] = currentWeight / cumulativeWeight
-    return val
+    size = startAtBar + 2
+    windows = [src[i:i + size].values for i in range(0, len(src) - size + 1, 1)]
+    weight = [math.pow(1 + (math.pow(i, 2) / (math.pow(lookback, 2) * 2 * relativeWeight)), -relativeWeight) for i in
+              range(size)]
+    current_weight = [np.sum(windows[i][::-1] * weight) for i in range(0, len(src) - size + 1, 1)]
+    cumulative_weight = [np.sum(weight) for _ in range(0, len(src) - size + 1, 1)]
+    kernel_line = np.array(current_weight) / np.array(cumulative_weight)
+    kernel_line = np.concatenate((np.array([0.0] * (size - 1)), kernel_line))
+    kernel_line = pd.Series(kernel_line.flatten())
+    return kernel_line
 
 
-# @function Gaussian Kernel - A weighted average of the source series. The weights are determined by the Radial Basis Function (RBF).
-# @param _src <float series> The source series.
-# @param _lookback <simple int> The number of bars used for the estimation. This is a sliding value that represents the most recent historical bars.
-# @param _startAtBar <simple int> Bar index on which to start regression. The first bars of a chart are often highly volatile, and omission of these initial bars often leads to a better overall fit.
-# @returns yhat <float series> The estimated values according to the Gaussian Kernel.
 def gaussian(src, lookback, startAtBar):
-    val = pd.Series(0.0, index=src.index)
-    for bar_index in range(startAtBar + 1, len(src)):
-        currentWeight = 0.0
-        cumulativeWeight = 0.0
-        for i in range(startAtBar + 2):
-            y = src[bar_index-i]
-            w = math.exp(-(i ** 2) / (2 * lookback ** 2))
-            currentWeight += y * w
-            cumulativeWeight += w
-
-        val[bar_index] = currentWeight / cumulativeWeight
-    return val
+    """
+    vectorized calculate for gaussian curve
+    :param src:
+    :param lookback:
+    :param startAtBar:
+    :return:
+    """
+    size = startAtBar + 2
+    windows = [src[i:i + size].values for i in range(0, len(src) - size + 1, 1)]
+    weight = [math.exp(-(i ** 2) / (2 * lookback ** 2)) for i in
+              range(size)]
+    current_weight = [np.sum(windows[i][::-1] * weight) for i in range(0, len(src) - size + 1, 1)]
+    cumulative_weight = [np.sum(weight) for _ in range(0, len(src) - size + 1, 1)]
+    gaussian_line = np.array(current_weight) / np.array(cumulative_weight)
+    gaussian_line = np.concatenate((np.array([0.0] * (size - 1)), gaussian_line))
+    gaussian_line = pd.Series(gaussian_line.flatten())
+    return gaussian_line
