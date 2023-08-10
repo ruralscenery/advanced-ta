@@ -206,7 +206,7 @@ class LorentzianClassification:
 
         # Variables used for ML Logic
         predictions = []
-        self.df["prediction"] = 0
+        prediction = np.array([0]*self.df.index.size)
         distances = []
 
 
@@ -254,22 +254,21 @@ class LorentzianClassification:
         # 5. Lorentzian distance is used as a distance metric in order to minimize the effect of outliers and take into account the warping of 
         #    "price-time" due to proximity to significant economic events.
 
-        def get_lorentzian_distance(size, bar_index, features: list[pd.Series]):
-            retVal = [0] * size
-            for feature in features:
-                retVal += np.log(1 + abs(feature[bar_index] - feature[:size]))
-            return retVal
+        def get_lorentzian_distance(bar_index):
+            if not hasattr(self, 'dists'):
+                size = (len(src) - maxBarsBackIndex)
+                self.dists = [[0] * size] * size
+                for feature in self.features:
+                    val = np.log(1 + cdist(pd.DataFrame(feature[maxBarsBackIndex:]), pd.DataFrame(feature[:size])))
+                    self.dists = val if (len(self.dists) == 0) else (self.dists + val)
 
-        # dists = [[0] * len(src)] * len(src)
-        # for feature in self.features:
-        #     dists += np.log(1 + cdist(pd.DataFrame(feature), pd.DataFrame(feature)))
+            range = min(self.settings.maxBarsBack, bar_index + 1)
+            return self.dists[bar_index - maxBarsBackIndex][:range]
+
 
         for bar_index in range(maxBarsBackIndex, len(src)):
             lastDistance = -1.0
-            sizeLoop = min(self.settings.maxBarsBack - 1, bar_index)
-            dist = get_lorentzian_distance(sizeLoop + 1, bar_index, self.features)
-            for i in range(sizeLoop + 1):
-                d = dist[i]
+            for i, d in enumerate(get_lorentzian_distance(bar_index)):
                 if d >= lastDistance and i % 4:
                     lastDistance = d
                     distances.append(d)
@@ -278,7 +277,7 @@ class LorentzianClassification:
                         lastDistance = distances[round(self.settings.neighborsCount*3/4)]
                         distances.pop(0)
                         predictions.pop(0)
-            self.df.loc[self.df.index[bar_index], 'prediction'] = sum(predictions)
+            prediction[bar_index] = sum(predictions)
 
 
         # ============================
@@ -289,7 +288,7 @@ class LorentzianClassification:
         filter_all = pd.Series(self.filter.volatility & self.filter.regime & self.filter.adx)
 
         # Filtered Signal: The model's prediction of future price movement direction with user-defined filters applied
-        signal = np.where(((self.df["prediction"] > 0) & filter_all), Direction.LONG, np.where(((self.df["prediction"] < 0) & filter_all), Direction.SHORT, None))
+        signal = np.where(((prediction > 0) & filter_all), Direction.LONG, np.where(((prediction < 0) & filter_all), Direction.SHORT, None))
         signal[0] = (0 if signal[0] == None else signal[0])
         for i in np.where(signal == None)[0]: signal[i] = signal[i - 1 if i >= 1 else 0]
         signal = pd.Series(signal, index=self.df.index)
@@ -316,6 +315,7 @@ class LorentzianClassification:
         isNewBuySignal = (isBuySignal & isDifferentSignalType)
         isNewSellSignal = (isSellSignal & isDifferentSignalType)
 
+        self.df["prediction"] = prediction
         self.df["signal"] = signal
         self.df["barsHeld"] = barsHeld
         # self.df["isHeldFourBars"] = isHeldFourBars
