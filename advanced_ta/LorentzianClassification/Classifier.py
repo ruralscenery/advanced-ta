@@ -201,14 +201,6 @@ class LorentzianClassification:
 
         # This model specializes specifically in predicting the direction of price action over the course of the next 4 bars. 
         # To avoid complications with the ML model, this value is hardcoded to 4 bars but support for other training lengths may be added in the future.
-        src = self.settings.source
-        y_train_array = np.where(src.shift(4) < src.shift(0), Direction.SHORT, np.where(src.shift(4) > src.shift(0), Direction.LONG, Direction.NEUTRAL))
-
-        # Variables used for ML Logic
-        predictions = []
-        prediction = np.array([0]*self.df.index.size)
-        distances = []
-
 
         # =========================
         # ====  Core ML Logic  ====
@@ -254,30 +246,57 @@ class LorentzianClassification:
         # 5. Lorentzian distance is used as a distance metric in order to minimize the effect of outliers and take into account the warping of 
         #    "price-time" due to proximity to significant economic events.
 
-        def get_lorentzian_distance(bar_index):
-            if not hasattr(self, 'dists'):
-                size = (len(src) - maxBarsBackIndex)
-                self.dists = [[0] * size] * size
-                for feature in self.features:
-                    val = np.log(1 + cdist(pd.DataFrame(feature[maxBarsBackIndex:]), pd.DataFrame(feature[:size])))
-                    self.dists = val if (len(self.dists) == 0) else (self.dists + val)
+        src = self.settings.source
 
-            range = min(self.settings.maxBarsBack, bar_index + 1)
-            return self.dists[bar_index - maxBarsBackIndex][:range]
+        def get_lorentzian_predictions():
+            for bar_index in range(maxBarsBackIndex): yield 0
+
+            predictions = []
+            distances = []
+            y_train_array = np.where(src.shift(4) < src.shift(0), Direction.SHORT, np.where(src.shift(4) > src.shift(0), Direction.LONG, Direction.NEUTRAL))
+
+            class Distances(object):
+                batchSize = 50
+                lastBatch = 0
+
+                def __init__(self, features):
+                    self.size = (len(src) - maxBarsBackIndex)
+                    self.features = features
+                    self.maxBarsBackIndex = maxBarsBackIndex
+                    self.dists = np.array([[0.0] * self.size] * self.batchSize)
+                    self.rows = np.array([0.0] * self.batchSize)
+
+                def __getitem__(self, item):
+                    batch = math.ceil((item + 1)/self.batchSize) * self.batchSize
+                    if batch > self.lastBatch:
+                        self.dists.fill(0.0)
+                        for feature in self.features:
+                            self.rows.fill(0.0)
+                            fBatch = feature[(self.maxBarsBackIndex + self.lastBatch):(self.maxBarsBackIndex + batch)]
+                            self.rows[:fBatch.size] = fBatch.values
+                            val = np.log(1 + cdist(pd.DataFrame(self.rows), pd.DataFrame(feature[:self.size])))
+                            self.dists += val
+                        self.lastBatch = batch
+
+                    return self.dists[item % self.batchSize]
+
+            dists = Distances(self.features)
+            for bar_index in range(maxBarsBackIndex, len(src)):
+                lastDistance = -1.0
+                span = min(self.settings.maxBarsBack, bar_index + 1)
+                for i, d in enumerate(dists[bar_index - maxBarsBackIndex][:span]):
+                    if d >= lastDistance and i % 4:
+                        lastDistance = d
+                        distances.append(d)
+                        predictions.append(round(y_train_array[i]))
+                        if len(predictions) > self.settings.neighborsCount:
+                            lastDistance = distances[round(self.settings.neighborsCount*3/4)]
+                            distances.pop(0)
+                            predictions.pop(0)
+                yield sum(predictions)
 
 
-        for bar_index in range(maxBarsBackIndex, len(src)):
-            lastDistance = -1.0
-            for i, d in enumerate(get_lorentzian_distance(bar_index)):
-                if d >= lastDistance and i % 4:
-                    lastDistance = d
-                    distances.append(d)
-                    predictions.append(round(y_train_array[i]))
-                    if len(predictions) > self.settings.neighborsCount:
-                        lastDistance = distances[round(self.settings.neighborsCount*3/4)]
-                        distances.pop(0)
-                        predictions.pop(0)
-            prediction[bar_index] = sum(predictions)
+        prediction = np.array([p for p in get_lorentzian_predictions()])
 
 
         # ============================
