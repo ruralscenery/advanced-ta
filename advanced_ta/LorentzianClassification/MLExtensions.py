@@ -15,9 +15,9 @@ from sklearn.preprocessing import MinMaxScaler
 # @param min <float> The minimum value of the unbounded range
 # @param max <float> The maximum value of the unbounded range
 # @returns <series float> The normalized series
-def normalize(src: pd.Series, min, max) -> pd.Series:
-    scaler = MinMaxScaler(feature_range=(min, max)).set_output(transform="pandas")
-    return min + (max - min) * scaler.fit_transform(pd.DataFrame({'data': src}))['data']
+def normalize(src: np.array, min=0, max=1) -> np.array:
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    return min + (max - min) * scaler.fit_transform(src.reshape(-1,1))[:,0]
 
 
 # @function Rescales a source value with a bounded range to anther bounded range
@@ -27,7 +27,7 @@ def normalize(src: pd.Series, min, max) -> pd.Series:
 # @param newMin <float> The minimum value of the range to rescale to
 # @param newMax <float> The maximum value of the range to rescale to 
 # @returns <series float> The rescaled series
-def rescale(src: pd.Series, old_min, old_max, new_min, new_max) -> pd.Series:
+def rescale(src: np.array, old_min, old_max, new_min=0, new_max=1) -> np.array:
     rescaled_value = new_min + (new_max - new_min) * (src - old_min) / max(old_max - old_min, 10e-10)
     return rescaled_value
 
@@ -44,8 +44,8 @@ def RMA(df: pd.Series, len: int) -> pd.Series:
 # @param n1 <int> The length of the RSI.
 # @param n2 <int> The smoothing length of the RSI.
 # @returns signal <series float> The normalized RSI.
-def n_rsi(src: pd.Series, n1, n2) -> pd.Series:
-    return rescale(ta.EMA(ta.RSI(src, n1), n2), 0, 100, 0, 1)
+def n_rsi(src: pd.Series, n1, n2) -> np.array:
+    return rescale(ta.EMA(ta.RSI(src.values, n1), n2), 0, 100)
 
 
 # @function Returns the normalized CCI ideal for use in ML algorithms.
@@ -53,8 +53,8 @@ def n_rsi(src: pd.Series, n1, n2) -> pd.Series:
 # @param n1 <int> The length of the CCI.
 # @param n2 <int> The smoothing length of the CCI.
 # @returns signal <series float> The normalized CCI.
-def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) -> pd.Series:
-    return normalize(ta.EMA(ta.CCI(highSrc, lowSrc, closeSrc, n1), n2), 0, 1)
+def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) -> np.array:
+    return normalize(ta.EMA(ta.CCI(highSrc.values, lowSrc.values, closeSrc.values, n1), n2))
 
 
 # @function Returns the normalized WaveTrend Classic series ideal for use in ML algorithms.
@@ -63,13 +63,13 @@ def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) ->
 # @param paramB <int> The second smoothing length for the WaveTrend Classic.
 # @param transformLength <int> The length of the transform.
 # @returns signal <series float> The normalized WaveTrend Classic series.
-def n_wt(src: pd.Series, n1=10, n2=11) -> pd.Series:
-    ema1 = ta.EMA(src, n1)
-    ema2 = ta.EMA(abs(src - ema1), n1)
-    ci = (src - ema1) / (0.015 * ema2)
+def n_wt(src: pd.Series, n1=10, n2=11) -> np.array:
+    ema1 = ta.EMA(src.values, n1)
+    ema2 = ta.EMA(abs(src.values - ema1), n1)
+    ci = (src.values - ema1) / (0.015 * ema2)
     wt1 = ta.EMA(ci, n2)  # tci
     wt2 = ta.SMA(wt1, 4)
-    return normalize(wt1 - wt2, 0, 1)
+    return normalize(wt1 - wt2)
 
 
 # @function Returns the normalized ADX ideal for use in ML algorithms.
@@ -77,8 +77,8 @@ def n_wt(src: pd.Series, n1=10, n2=11) -> pd.Series:
 # @param lowSrc <series float> The input series for the low price.
 # @param closeSrc <series float> The input series for the close price.
 # @param n1 <int> The length of the ADX.
-def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> pd.Series:
-    return rescale(ta.ADX(highSrc, lowSrc, closeSrc, n1), 0, 100, 0, 1)
+def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> np.array:
+    return rescale(ta.ADX(highSrc.values, lowSrc.values, closeSrc.values, n1), 0, 100)
     # TODO: Replicate ADX logic from jdehorty
 
 
@@ -91,26 +91,36 @@ def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> pd.
 # @param threshold <float> The threshold.
 # @param useRegimeFilter <bool> Whether to use the regime filter.
 # @returns <bool> Boolean indicating whether or not to let the signal pass through the filter.
-def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilter, threshold):
-    if not useRegimeFilter: return pd.Series(True, index=src.index)
-    value1 = [0.0] * src.index.size
-    value2 = [0.0] * src.index.size
-    klmf = [0.0] * src.index.size
-    absCurveSlope = pd.Series([0.0])
-    filter = pd.Series(False, index=src.index)
-    for i in range(src.size):
-        if (high[i] - low[i]) == 0:
-            filter[i] = False
-            continue
-        value1[i] = 0.2 * (src[i] - src[i - 1 if i >= 1 else 0]) + 0.8 * value1[i - 1 if i >= 1 else 0]
-        value2[i] = 0.1 * (high[i] - low[i]) + 0.8 * value2[i - 1 if i >= 1 else 0]
-        omega = abs(value1[i] / value2[i])
-        alpha = (-(omega ** 2) + math.sqrt((omega ** 4) + 16 * (omega ** 2))) / 8 
-        klmf[i] = alpha * src[i] + (1 - alpha) * klmf[i - 1 if i >= 1 else 0]
-        absCurveSlope[i] = abs(klmf[i] - klmf[i - 1 if i >= 1 else 0])
-        exponentialAverageAbsCurveSlope = 1.0 * ta.EMA(absCurveSlope, 200)[i]
-        normalized_slope_decline = (absCurveSlope[i] - exponentialAverageAbsCurveSlope) / exponentialAverageAbsCurveSlope
-        filter[i] = normalized_slope_decline >= threshold
+def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilter, threshold) -> np.array:
+    if not useRegimeFilter: return np.array([True]*len(src))
+
+    # @njit(parallel=True, cache=True)
+    def klmf(src: np.array, high: np.array, low: np.array):
+        value1 = np.array([0.0]*len(src))
+        value2 = np.array([0.0]*len(src))
+        klmf = np.array([0.0]*len(src))
+
+        for i in range(len(src)):
+            if (high[i] - low[i]) == 0: continue
+            value1[i] = 0.2 * (src[i] - src[i - 1 if i >= 1 else 0]) + 0.8 * value1[i - 1 if i >= 1 else 0]
+            value2[i] = 0.1 * (high[i] - low[i]) + 0.8 * value2[i - 1 if i >= 1 else 0]
+
+        with np.errstate(divide='ignore',invalid='ignore'):
+            omega = np.nan_to_num(np.abs(np.divide(value1, value2)))
+        alpha = (-(omega ** 2) + np.sqrt((omega ** 4) + 16 * (omega ** 2))) / 8
+
+        for i in range(len(src)):
+            klmf[i] = alpha[i] * src[i] + (1 - alpha[i]) * klmf[i - 1 if i >= 1 else 0]
+
+        return klmf
+
+    filter = np.array([False]*len(src))
+    absCurveSlope = np.abs(np.diff(klmf(src.values, high.values, low.values), prepend=0.0))
+    exponentialAverageAbsCurveSlope = ta.EMA(absCurveSlope, 200)
+    with np.errstate(divide='ignore',invalid='ignore'):
+        normalized_slope_decline = (absCurveSlope - exponentialAverageAbsCurveSlope) / exponentialAverageAbsCurveSlope
+    flags = (normalized_slope_decline >= threshold)
+    filter[(len(filter) - len(flags)):] = flags
     return filter
 
 
@@ -143,8 +153,8 @@ def filter_adx(src: pd.Series, high: pd.Series, low: pd.Series, adxThreshold, us
 # @param maxLength <int> The maximum length of the ATR.
 # @param useVolatilityFilter <bool> Whether to use the volatility filter.
 # @returns <bool> Boolean indicating whether or not to let the signal pass through the filter.
-def filter_volatility(high, low, close, useVolatilityFilter, minLength=1, maxLength=10):
-    if not useVolatilityFilter: return pd.Series(True, index=close.index)
-    recentAtr = ta.ATR(high, low, close, minLength)
-    historicalAtr = ta.ATR(high, low, close, maxLength)
+def filter_volatility(high, low, close, useVolatilityFilter, minLength=1, maxLength=10) -> np.array:
+    if not useVolatilityFilter: return np.array([True]*len(close))
+    recentAtr = ta.ATR(high.values, low.values, close.values, minLength)
+    historicalAtr = ta.ATR(high.values, low.values, close.values, maxLength)
     return (recentAtr > historicalAtr)
