@@ -45,7 +45,7 @@ def RMA(df: pd.Series, len: int) -> pd.Series:
 # @param n2 <int> The smoothing length of the RSI.
 # @returns signal <series float> The normalized RSI.
 def n_rsi(src: pd.Series, n1, n2) -> pd.Series:
-    return rescale(ta.RSI(src, n1), 0, 100, 0, 1)
+    return rescale(ta.EMA(ta.RSI(src, n1), n2), 0, 100, 0, 1)
 
 
 # @function Returns the normalized CCI ideal for use in ML algorithms.
@@ -54,7 +54,7 @@ def n_rsi(src: pd.Series, n1, n2) -> pd.Series:
 # @param n2 <int> The smoothing length of the CCI.
 # @returns signal <series float> The normalized CCI.
 def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) -> pd.Series:
-    return normalize(ta.CCI(highSrc, lowSrc, closeSrc, n1), 0, 1)
+    return normalize(ta.EMA(ta.CCI(highSrc, lowSrc, closeSrc, n1), n2), 0, 1)
 
 
 # @function Returns the normalized WaveTrend Classic series ideal for use in ML algorithms.
