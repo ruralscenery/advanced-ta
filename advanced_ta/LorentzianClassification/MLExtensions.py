@@ -10,60 +10,63 @@ from sklearn.preprocessing import MinMaxScaler
 # ==========================
 
 
-# @function Rescales a source value with an unbounded range to a target range.
-# @param src <series float> The input series
-# @param min <float> The minimum value of the unbounded range
-# @param max <float> The maximum value of the unbounded range
-# @returns <series float> The normalized series
-def normalize(src: np.array, min=0, max=1) -> np.array:
+def normalize(src: np.array, range_min=0, range_max=1) -> np.array:
+    """
+    function Rescales a source value with an unbounded range to a bounded range
+    param src: <np.array> The input series
+    param range_min: <float> The minimum value of the unbounded range
+    param range_max: <float> The maximum value of the unbounded range
+    returns <np.array> The normalized series
+    """
     scaler = MinMaxScaler(feature_range=(0, 1))
-    return min + (max - min) * scaler.fit_transform(src.reshape(-1,1))[:,0]
+    return range_min + (range_max - range_min) * scaler.fit_transform(src.reshape(-1,1))[:,0]
 
 
-# @function Rescales a source value with a bounded range to anther bounded range
-# @param src <series float> The input series
-# @param oldMin <float> The minimum value of the range to rescale from
-# @param oldMax <float> The maximum value of the range to rescale from
-# @param newMin <float> The minimum value of the range to rescale to
-# @param newMax <float> The maximum value of the range to rescale to 
-# @returns <series float> The rescaled series
 def rescale(src: np.array, old_min, old_max, new_min=0, new_max=1) -> np.array:
+    """
+    function Rescales a source value with a bounded range to anther bounded range
+    param src: <np.array> The input series
+    param old_min: <float> The minimum value of the range to rescale from
+    param old_max: <float> The maximum value of the range to rescale from
+    param new_min: <float> The minimum value of the range to rescale to
+    param new_max: <float> The maximum value of the range to rescale to 
+    returns <np.array> The rescaled series
+    """
     rescaled_value = new_min + (new_max - new_min) * (src - old_min) / max(old_max - old_min, 10e-10)
     return rescaled_value
 
 
-def RMA(df: pd.Series, len: int) -> pd.Series:
-    rma = df.copy()
-    rma.iloc[:len] = rma.rolling(len).mean().iloc[:len]
-    rma = rma.ewm(alpha=(1.0/len),adjust=False).mean()
-    return rma
-
-
-# @function Returns the normalized RSI ideal for use in ML algorithms.
-# @param src <series float> The input series (i.e., the result of the RSI calculation).
-# @param n1 <int> The length of the RSI.
-# @param n2 <int> The smoothing length of the RSI.
-# @returns signal <series float> The normalized RSI.
 def n_rsi(src: pd.Series, n1, n2) -> np.array:
+    """
+    function Returns the normalized RSI ideal for use in ML algorithms
+    param src: <np.array> The input series
+    param n1: <int> The length of the RSI
+    param n2: <int> The smoothing length of the RSI
+    returns <np.array> The normalized RSI
+    """
     return rescale(ta.EMA(ta.RSI(src.values, n1), n2), 0, 100)
 
 
-# @function Returns the normalized CCI ideal for use in ML algorithms.
-# @param src <series float> The input series (i.e., the result of the CCI calculation).
-# @param n1 <int> The length of the CCI.
-# @param n2 <int> The smoothing length of the CCI.
-# @returns signal <series float> The normalized CCI.
 def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) -> np.array:
+    """
+    function Returns the normalized CCI ideal for use in ML algorithms
+    param highSrc: <np.array> The input series for the high price
+    param lowSrc: <np.array> The input series for the low price
+    param closeSrc: <np.array> The input series for the close price
+    param n1: <int> The length of the CCI
+    param n2: <int> The smoothing length of the CCI
+    returns <np.array> The normalized CCI
+    """
     return normalize(ta.EMA(ta.CCI(highSrc.values, lowSrc.values, closeSrc.values, n1), n2))
 
-
-# @function Returns the normalized WaveTrend Classic series ideal for use in ML algorithms.
-# @param src <series float> The input series (i.e., the result of the WaveTrend Classic calculation).
-# @param paramA <int> The first smoothing length for WaveTrend Classic.
-# @param paramB <int> The second smoothing length for the WaveTrend Classic.
-# @param transformLength <int> The length of the transform.
-# @returns signal <series float> The normalized WaveTrend Classic series.
 def n_wt(src: pd.Series, n1=10, n2=11) -> np.array:
+    """
+    function Returns the normalized WaveTrend Classic series ideal for use in ML algorithms
+    param src: <np.array> The input series
+    param n1: <int> The first smoothing length for WaveTrend Classic
+    param n2: <int> The second smoothing length for the WaveTrend Classic
+    returns <np.array> The normalized WaveTrend Classic series
+    """
     ema1 = ta.EMA(src.values, n1)
     ema2 = ta.EMA(abs(src.values - ema1), n1)
     ci = (src.values - ema1) / (0.015 * ema2)
@@ -71,13 +74,14 @@ def n_wt(src: pd.Series, n1=10, n2=11) -> np.array:
     wt2 = ta.SMA(wt1, 4)
     return normalize(wt1 - wt2)
 
-
-# @function Returns the normalized ADX ideal for use in ML algorithms.
-# @param highSrc <series float> The input series for the high price.
-# @param lowSrc <series float> The input series for the low price.
-# @param closeSrc <series float> The input series for the close price.
-# @param n1 <int> The length of the ADX.
 def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> np.array:
+    """
+    function Returns the normalized ADX ideal for use in ML algorithms
+    param highSrc: <np.array> The input series for the high price
+    param lowSrc: <np.array> The input series for the low price
+    param closeSrc: <np.array> The input series for the close price
+    param n1: <int> The length of the ADX
+    """
     return rescale(ta.ADX(highSrc.values, lowSrc.values, closeSrc.values, n1), 0, 100)
     # TODO: Replicate ADX logic from jdehorty
 
@@ -85,13 +89,16 @@ def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> np.
 # =================
 # ==== Filters ====
 # =================
-
-# @regime_filter
-# @param src <series float> The source series.
-# @param threshold <float> The threshold.
-# @param useRegimeFilter <bool> Whether to use the regime filter.
-# @returns <bool> Boolean indicating whether or not to let the signal pass through the filter.
 def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilter, threshold) -> np.array:
+    """
+    regime_filter
+    param src: <np.array> The source series
+    param high: <np.array> The input series for the high price
+    param low: <np.array> The input series for the low price
+    param useRegimeFilter: <bool> Whether to use the regime filter
+    param threshold: <float> The threshold
+    returns <np.array> Boolean indicating whether or not to let the signal pass through the filter
+    """
     if not useRegimeFilter: return np.array([True]*len(src))
 
     # @njit(parallel=True, cache=True)
@@ -123,37 +130,32 @@ def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilt
     filter[(len(filter) - len(flags)):] = flags
     return filter
 
-
-# @function filter_adx
-# @param src <series float> The source series.
-# @param length <int> The length of the ADX.
-# @param adxThreshold <int> The ADX threshold.
-# @param useAdxFilter <bool> Whether to use the ADX filter.
-# @returns <series float> The ADX.
-def filter_adx(src: pd.Series, high: pd.Series, low: pd.Series, adxThreshold, useAdxFilter, length=14):
-    if not useAdxFilter: return pd.Series(True, index=src.index)
-    tr = np.max(np.max(high - low, np.abs(high - src.shift(1))), np.abs(low - src.shift(1)))
-    directionalMovementPlus = np.max(high - high.shift(1), 0) if (high - high.shift(1)) > (low.shift(1) - low) else 0
-    negMovement = low.shift(1, fill_value=0) - np.max(low.shift(1) - low, 0) if low > (high - high.shift(1)) else 0
-    trSmooth = pd.Series(0.0, src.size())
-    trSmooth = trSmooth.shift(1) - trSmooth.shift(1) / length + tr
-    smoothDirectionalMovementPlus = pd.Series(0.0, src.size())
-    smoothDirectionalMovementPlus = smoothDirectionalMovementPlus.shift(1) - smoothDirectionalMovementPlus.shift(1) / length + directionalMovementPlus
-    smoothnegMovement = pd.Series(0.0, src.size())
-    smoothnegMovement = smoothnegMovement.shift(1) - smoothnegMovement.shift(1) / length + negMovement
-    diPositive = smoothDirectionalMovementPlus / trSmooth * 100
-    diNegative = smoothnegMovement / trSmooth * 100
-    dx = np.abs(diPositive - diNegative) / (diPositive + diNegative) * 100
-    adx = RMA(dx, length)
+def filter_adx(src: pd.Series, high: pd.Series, low: pd.Series, adxThreshold, useAdxFilter, length=14) -> np.array:
+    """
+    function filter_adx
+    param src: <np.array> The source series
+    param high: <np.array> The input series for the high price
+    param low: <np.array> The input series for the low price
+    param adxThreshold: <int> The ADX threshold
+    param useAdxFilter: <bool> Whether to use the ADX filter
+    param length: <int> The length of the ADX
+    returns <np.array> Boolean indicating whether or not to let the signal pass through the filter
+    """
+    if not useAdxFilter: return np.array([True]*len(src))
+    adx = ta.ADX(high.values, low.values, src.values, length)
     return (adx > adxThreshold)
 
-
-# @function filter_volatility
-# @param minLength <int> The minimum length of the ATR.
-# @param maxLength <int> The maximum length of the ATR.
-# @param useVolatilityFilter <bool> Whether to use the volatility filter.
-# @returns <bool> Boolean indicating whether or not to let the signal pass through the filter.
 def filter_volatility(high, low, close, useVolatilityFilter, minLength=1, maxLength=10) -> np.array:
+    """
+    function filter_volatility
+    param high: <np.array> The input series for the high price
+    param low: <np.array> The input series for the low price
+    param close: <np.array> The input series for the close price
+    param useVolatilityFilter: <bool> Whether to use the volatility filter
+    param minLength: <int> The minimum length of the ATR
+    param maxLength: <int> The maximum length of the ATR
+    returns <np.array> Boolean indicating whether or not to let the signal pass through the filter
+    """
     if not useVolatilityFilter: return np.array([True]*len(close))
     recentAtr = ta.ATR(high.values, low.values, close.values, minLength)
     historicalAtr = ta.ATR(high.values, low.values, close.values, maxLength)
