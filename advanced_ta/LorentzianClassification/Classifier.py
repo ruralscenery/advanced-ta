@@ -5,7 +5,7 @@ from ..Utils import *
 from .Types import *
 from . import MLExtensions as ml
 from . import KernelFunctions as kernels
-import talib as ta
+from ta.trend import ema_indicator as EMA, sma_indicator as SMA
 
 """
 ====================
@@ -200,10 +200,10 @@ class LorentzianClassification:
         # Derived from General Settings
         maxBarsBackIndex = (len(self.df.index) - self.settings.maxBarsBack) if (len(self.df.index) >= self.settings.maxBarsBack) else 0
 
-        isEmaUptrend = np.where(self.settings.useEmaFilter, (self.df["close"] > ta.EMA(self.df["close"], self.settings.emaPeriod)), True)
-        isEmaDowntrend = np.where(self.settings.useEmaFilter, (self.df["close"] < ta.EMA(self.df["close"], self.settings.emaPeriod)), True)
-        isSmaUptrend = np.where(self.settings.useSmaFilter, (self.df["close"] > ta.SMA(self.df["close"], self.settings.smaPeriod)), True)
-        isSmaDowntrend = np.where(self.settings.useSmaFilter, (self.df["close"] < ta.SMA(self.df["close"], self.settings.smaPeriod)), True)
+        isEmaUptrend = np.where(self.settings.useEmaFilter, (self.df["close"] > EMA(self.df["close"], self.settings.emaPeriod)), True)
+        isEmaDowntrend = np.where(self.settings.useEmaFilter, (self.df["close"] < EMA(self.df["close"], self.settings.emaPeriod)), True)
+        isSmaUptrend = np.where(self.settings.useSmaFilter, (self.df["close"] > SMA(self.df["close"], self.settings.smaPeriod)), True)
+        isSmaDowntrend = np.where(self.settings.useSmaFilter, (self.df["close"] < SMA(self.df["close"], self.settings.smaPeriod)), True)
 
         """
         =================================

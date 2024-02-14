@@ -1,7 +1,9 @@
 import math
 import numpy as np
 import pandas as pd
-import talib as ta
+from ta.momentum import rsi as RSI
+from ta.volatility import average_true_range as ATR
+from ta.trend import cci as CCI, adx as ADX, ema_indicator as EMA, sma_indicator as SMA
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -44,7 +46,7 @@ def n_rsi(src: pd.Series, n1, n2) -> np.array:
     param n2: <int> The smoothing length of the RSI
     returns <np.array> The normalized RSI
     """
-    return rescale(ta.EMA(ta.RSI(src.values, n1), n2), 0, 100)
+    return rescale(EMA(RSI(src, n1), n2).values, 0, 100)
 
 
 def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) -> np.array:
@@ -57,7 +59,7 @@ def n_cci(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1, n2) ->
     param n2: <int> The smoothing length of the CCI
     returns <np.array> The normalized CCI
     """
-    return normalize(ta.EMA(ta.CCI(highSrc.values, lowSrc.values, closeSrc.values, n1), n2))
+    return normalize(EMA(CCI(highSrc, lowSrc, closeSrc, n1), n2).values)
 
 def n_wt(src: pd.Series, n1=10, n2=11) -> np.array:
     """
@@ -67,12 +69,12 @@ def n_wt(src: pd.Series, n1=10, n2=11) -> np.array:
     param n2: <int> The second smoothing length for the WaveTrend Classic
     returns <np.array> The normalized WaveTrend Classic series
     """
-    ema1 = ta.EMA(src.values, n1)
-    ema2 = ta.EMA(abs(src.values - ema1), n1)
-    ci = (src.values - ema1) / (0.015 * ema2)
-    wt1 = ta.EMA(ci, n2)  # tci
-    wt2 = ta.SMA(wt1, 4)
-    return normalize(wt1 - wt2)
+    ema1 = EMA(src, n1)
+    ema2 = EMA(abs(src - ema1), n1)
+    ci = (src - ema1) / (0.015 * ema2)
+    wt1 = EMA(ci, n2)  # tci
+    wt2 = SMA(wt1, 4)
+    return normalize((wt1 - wt2).values)
 
 def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> np.array:
     """
@@ -82,7 +84,7 @@ def n_adx(highSrc: pd.Series, lowSrc: pd.Series, closeSrc: pd.Series, n1) -> np.
     param closeSrc: <np.array> The input series for the close price
     param n1: <int> The length of the ADX
     """
-    return rescale(ta.ADX(highSrc.values, lowSrc.values, closeSrc.values, n1), 0, 100)
+    return rescale(ADX(highSrc, lowSrc, closeSrc, n1).values, 0, 100)
     # TODO: Replicate ADX logic from jdehorty
 
 
@@ -123,7 +125,7 @@ def regime_filter(src: pd.Series, high: pd.Series, low: pd.Series, useRegimeFilt
 
     filter = np.array([False]*len(src))
     absCurveSlope = np.abs(np.diff(klmf(src.values, high.values, low.values), prepend=0.0))
-    exponentialAverageAbsCurveSlope = ta.EMA(absCurveSlope, 200)
+    exponentialAverageAbsCurveSlope = EMA(pd.Series(absCurveSlope), 200).values
     with np.errstate(divide='ignore',invalid='ignore'):
         normalized_slope_decline = (absCurveSlope - exponentialAverageAbsCurveSlope) / exponentialAverageAbsCurveSlope
     flags = (normalized_slope_decline >= threshold)
@@ -142,7 +144,7 @@ def filter_adx(src: pd.Series, high: pd.Series, low: pd.Series, adxThreshold, us
     returns <np.array> Boolean indicating whether or not to let the signal pass through the filter
     """
     if not useAdxFilter: return np.array([True]*len(src))
-    adx = ta.ADX(high.values, low.values, src.values, length)
+    adx = ADX(high, low, src, length).values
     return (adx > adxThreshold)
 
 def filter_volatility(high, low, close, useVolatilityFilter, minLength=1, maxLength=10) -> np.array:
@@ -157,6 +159,6 @@ def filter_volatility(high, low, close, useVolatilityFilter, minLength=1, maxLen
     returns <np.array> Boolean indicating whether or not to let the signal pass through the filter
     """
     if not useVolatilityFilter: return np.array([True]*len(close))
-    recentAtr = ta.ATR(high.values, low.values, close.values, minLength)
-    historicalAtr = ta.ATR(high.values, low.values, close.values, maxLength)
+    recentAtr = ATR(high, low, close, minLength).values
+    historicalAtr = ATR(high, low, close, maxLength).values
     return (recentAtr > historicalAtr)

@@ -1,13 +1,5 @@
 This module is a python implementation of Lorentzian Classification algorithm developed by @jdehorty in pinescript. The original work can be found here - https://www.tradingview.com/script/WhBzgfDu-Machine-Learning-Lorentzian-Classification/
 
-## Prerequisites
-- Ensure that [TA-Lib](https://ta-lib.org/hdr_dw.html) is downloaded and built for your platform. Set `TA_INCLUDE_PATH` and `TA_LIBRARY_PATH` as mentioned in [ta-lib-python](https://github.com/TA-Lib/ta-lib-python#installation). TA-Lib package itself will be installed as a dependency of `advanced-ta`.
-- Windows users can use below commands to install TA-Lib,
-    ```
-    pip install pipwin
-    pipwin install TA-Lib
-    ```
-
 ## Usage
 
 At the most simplest, you can just do this:
@@ -26,7 +18,7 @@ from advanced_ta import LorentzianClassification
 For advanced use, you can do:
 ```python
 from advanced_ta import LorentzianClassification
-import TA-Lib as ta
+from ta.volume import money_flow_index as MFI
 .
 .
     # df here is the dataframe containing stock data as [['open', 'high', 'low', 'close', 'volume']]. Notice that the column names are in lower case.
@@ -38,7 +30,7 @@ import TA-Lib as ta
             LorentzianClassification.Feature("CCI", 20, 2),  # f3
             LorentzianClassification.Feature("ADX", 20, 2),  # f4
             LorentzianClassification.Feature("RSI", 9, 2),   # f5
-            ta.MFI(df['open'], df['high'], df['low'], df['close'], df['volume']) #f6
+            MFI(df['open'], df['high'], df['low'], df['close'], df['volume'], 14) #f6
         ],
         settings=LorentzianClassification.Settings(
             source='close',
@@ -75,3 +67,8 @@ import TA-Lib as ta
 ### Reference From TradingView
 
 ![reference](https://bitbucket.org/lokiarya/advanced-ta/raw/c8e21204e4c6a7009141c379ec32cd05ac2d49b6/reference.png "TradingView Result For Indentical Settings")
+
+
+## Version History
+### 0.1.8
+- Replacing dependency on [TA-Lib](https://pypi.org/project/TA-Lib/) with [ta](https://pypi.org/project/ta/) to simplify setup
